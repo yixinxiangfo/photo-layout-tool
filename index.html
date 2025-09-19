@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>写真スクエアトリミング・A4印刷レイアウトツール</title>
+    <script crossorigin src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f9fafb;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #1f2937;
+            margin-left: 0.5rem;
+        }
+        
+        .button-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .btn {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-blue {
+            background-color: #2563eb;
+            color: white;
+        }
+        
+        .btn-blue:hover:not(:disabled) {
+            background-color: #1d4ed8;
+        }
+        
+        .btn-green {
+            background-color: #16a34a;
+            color: white;
+        }
+        
+        .btn-green:hover:not(:disabled) {
+            background-color: #15803d;
+        }
+        
+        .btn-red {
+            background-color: #dc2626;
+            color: white;
+        }
+        
+        .btn-red:hover:not(:disabled) {
+            background-color: #b91c1c;
+        }
+        
+        .btn-gray {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        
+        .btn-gray:hover:not(:disabled) {
+            background-color: #d1d5db;
+        }
+        
+        .info-box {
+            background-color: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+        
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .photo-slot {
+            aspect-ratio: 1;
+            border: 2px dashed #d1d5db;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            overflow: hidden;
+            transition: all 0.2s;
+            position: relative;
+            background-color: #f9fafb;
+        }
+        
+        .photo-slot.has-photo {
+            border: 2px solid #2563eb;
+        }
+        
+        .photo-slot.selected {
+            border-color: #dc2626;
+            box-shadow: 0 0 0 2px #dc2626;
+        }
+        
+        .photo-slot:hover {
+            border-color: #2563eb;
+        }
+        
+        .photo-crop {
+            width: 100%;
+            height: 100%;
+            background-repeat: no-repeat;
+        }
+        
+        .empty-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #9ca3af;
+            font-size: 0.875rem;
+        }
+        
+        .editor {
+            margin-top: 1.5rem;
+        }
+        
+        .editor h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #1f2937;
+        }
+        
+        .preview-box {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .preview {
+            width: 200px;
+            height: 200px;
+            border: 2px solid #2563eb;
+            border-radius: 0.25rem;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .preview-label {
+            position: absolute;
+            bottom: -1.5rem;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        
+        .control-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .control-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #374151;
+        }
+        
+        .slider-group {
+            margin-bottom: 0.75rem;
+        }
+        
+        .slider-label {
+            display: block;
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-bottom: 0.25rem;
+        }
+        
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e7eb;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2563eb;
+            cursor: pointer;
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2563eb;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .slider-values {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+        
+        .micro-controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.25rem;
+            max-width: 150px;
+        }
+        
+        .micro-btn {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            border: none;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        
+        .micro-btn:hover {
+            background-color: #d1d5db;
+        }
+        
+        .micro-center {
+            background-color: #f3f4f6;
+            color: #6b7280;
+            font-size: 0.625rem;
+            text-align: center;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .icon {
+            width: 1rem;
+            height: 1rem;
+            margin-right: 0.5rem;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 0.5rem;
+            }
+            
+            .photo-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .button-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useCallback, useEffect } = React;
+
+        // LocalStorageからデータを読み込み
+        const loadPhotosFromStorage = () => {
+            try {
+                const saved = localStorage.getItem('photoLayoutData');
+                return saved ? JSON.parse(saved) : [];
+            } catch {
+                return [];
+            }
+        };
+
+        // LocalStorageにデータを保存
+        const savePhotosToStorage = (photos) => {
+            try {
+                localStorage.setItem('photoLayoutData', JSON.stringify(photos));
+            } catch (e) {
+                console.warn('写真データの保存に失敗しました:', e);
+            }
+        };
+
+        const PhotoLayoutApp = () => {
+            const [photos, setPhotos] = useState(loadPhotosFromStorage);
+            const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
+            const fileInputRef = useRef(null);
+
+            // 写真が変更されるたびにLocalStorageに保存
+            useEffect(() => {
+                savePhotosToStorage(photos);
+            }, [photos]);
+
+            const handleFileUpload = useCallback((event) => {
+                const files = Array.from(event.target.files);
+                
+                files.forEach(file => {
+                    if (file.type.startsWith('image/')) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const newPhoto = {
+                                id: Date.now() + Math.random(),
+                                src: e.target.result,
+                                backgroundPositionX: 50,
+                                backgroundPositionY: 50,
+                                backgroundSize: 'cover'
+                            };
+                            
+                            setPhotos(prev => [...prev, newPhoto]);
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }, []);
+
+            const updatePhoto = (index, updates) => {
+                setPhotos(prev => prev.map((photo, i) => 
+                    i === index ? { ...photo, ...updates } : photo
+                ));
+            };
+
+            const removePhoto = (index) => {
+                setPhotos(prev => prev.filter((_, i) => i !== index));
+                if (selectedPhotoIndex === index) {
+                    setSelectedPhotoIndex(null);
+                }
+            };
+
+            const clearAllPhotos = () => {
+                if (photos.length === 0) {
+                    alert('クリアする写真がありません。');
+                    return;
+                }
+                
+                const confirmed = confirm(`現在の写真${photos.length}枚を全て削除しますか？\nこの操作は取り消せません。`);
+                if (confirmed) {
+                    setPhotos([]);
+                    setSelectedPhotoIndex(null);
+                    localStorage.removeItem('photoLayoutData');
+                    alert('全ての写真をクリアしました。');
+                }
+            };
+
+            const adjustPosition = (index, direction, amount = 5) => {
+                const photo = photos[index];
+                if (!photo) return;
+                
+                let newX = photo.backgroundPositionX;
+                let newY = photo.backgroundPositionY;
+                
+                switch(direction) {
+                    case 'left':
+                        newX = Math.max(0, newX - amount);
+                        break;
+                    case 'right':
+                        newX = Math.min(100, newX + amount);
+                        break;
+                    case 'up':
+                        newY = Math.max(0, newY - amount);
+                        break;
+                    case 'down':
+                        newY = Math.min(100, newY + amount);
+                        break;
+                }
+                
+                updatePhoto(index, {
+                    backgroundPositionX: newX,
+                    backgroundPositionY: newY
+                });
+            };
+
+            const generateJPEG = () => {
+                try {
+                    if (photos.length === 0) {
+                        alert('写真を追加してからダウンロードしてください。');
+                        return;
+                    }
+                    
+                    // A4サイズ設定（300DPI）
+                    const a4Width = 2480;
+                    const a4Height = 3508;
+                    const margin = 59;
+                    const photoSize = 709;
+                    const gap = 59;
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = a4Width;
+                    canvas.height = a4Height;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // 背景を白に
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, a4Width, a4Height);
+                    
+                    let loadedCount = 0;
+                    let totalPhotos = Math.min(photos.length, 12);
+                    
+                    if (totalPhotos === 0) {
+                        canvas.toBlob(function(blob) {
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `photo-layout-${new Date().toISOString().slice(0,10)}.jpg`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                            alert('A4レイアウト画像をダウンロードしました！');
+                        }, 'image/jpeg', 0.9);
+                        return;
+                    }
+                    
+                    // 写真を配置（3列4行）
+                    for (let row = 0; row < 4; row++) {
+                        for (let col = 0; col < 3; col++) {
+                            const index = row * 3 + col;
+                            const photo = photos[index];
+                            
+                            if (photo) {
+                                ((currentPhoto, currentRow, currentCol) => {
+                                    const img = new Image();
+                                    img.onload = function() {
+                                        const x = margin + currentCol * (photoSize + gap);
+                                        const y = margin + currentRow * (photoSize + gap);
+                                        
+                                        const bgPosX = currentPhoto.backgroundPositionX / 100;
+                                        const bgPosY = currentPhoto.backgroundPositionY / 100;
+                                        
+                                        let scale = 1;
+                                        if (currentPhoto.backgroundSize === 'cover') {
+                                            scale = Math.max(photoSize / img.width, photoSize / img.height);
+                                        } else {
+                                            const sizePercent = parseInt(currentPhoto.backgroundSize) || 100;
+                                            scale = (sizePercent / 100) * Math.max(photoSize / img.width, photoSize / img.height);
+                                        }
+                                        
+                                        const scaledWidth = img.width * scale;
+                                        const scaledHeight = img.height * scale;
+                                        const cropX = (scaledWidth - photoSize) * bgPosX;
+                                        const cropY = (scaledHeight - photoSize) * bgPosY;
+                                        
+                                        ctx.save();
+                                        ctx.beginPath();
+                                        ctx.rect(x, y, photoSize, photoSize);
+                                        ctx.clip();
+                                        ctx.drawImage(img, x - cropX, y - cropY, scaledWidth, scaledHeight);
+                                        ctx.restore();
+                                        
+                                        loadedCount++;
+                                        if (loadedCount === totalPhotos) {
+                                            canvas.toBlob(function(blob) {
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `photo-layout-${new Date().toISOString().slice(0,10)}.jpg`;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                                URL.revokeObjectURL(url);
+                                                alert('A4レイアウト画像をダウンロードしました！\nコンビニで印刷する際は「用紙サイズに合わせる」を選択してください。');
+                                            }, 'image/jpeg', 0.9);
+                                        }
+                                    };
+                                    img.onerror = function() {
+                                        loadedCount++;
+                                        if (loadedCount === totalPhotos) {
+                                            canvas.toBlob(function(blob) {
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `photo-layout-${new Date().toISOString().slice(0,10)}.jpg`;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                                URL.revokeObjectURL(url);
+                                                alert('A4レイアウト画像をダウンロードしました！（一部の画像が読み込めませんでした）');
+                                            }, 'image/jpeg', 0.9);
+                                        }
+                                    };
+                                    img.src = currentPhoto.src;
+                                })(photo, row, col);
+                            }
+                        }
+                    }
+                    
+                } catch (error) {
+                    alert('エラーが発生しました: ' + error.message);
+                }
+            };
+
+            const selectedPhoto = selectedPhotoIndex !== null ? photos[selectedPhotoIndex] : null;
+
+            return React.createElement('div', { className: 'container' },
+                // ヘッダーカード
+                React.createElement('div', { className: 'card' },
+                    React.createElement('div', { className: 'header' },
+                        React.createElement('span', { style: { fontSize: '1.5rem' } }, '📸'),
+                        React.createElement('h1', null, '写真スクエアトリミング・A4印刷レイアウトツール')
+                    ),
+                    
+                    // ボタン行
+                    React.createElement('div', { className: 'button-row' },
+                        React.createElement('button', 
+                            { 
+                                className: 'btn btn-blue',
+                                onClick: () => fileInputRef.current?.click()
+                            },
+                            React.createElement('span', { className: 'icon' }, '📁'),
+                            '写真を追加'
+                        ),
+                        React.createElement('button', 
+                            { 
+                                className: 'btn btn-red',
+                                onClick: clearAllPhotos,
+                                disabled: photos.length === 0
+                            },
+                            React.createElement('span', { className: 'icon' }, '🗑️'),
+                            '全クリア'
+                        ),
+                        React.createElement('button', 
+                            { 
+                                className: 'btn btn-green',
+                                onClick: generateJPEG,
+                                disabled: photos.length === 0
+                            },
+                            React.createElement('span', { className: 'icon' }, '💾'),
+                            'A4高解像度JPEG生成'
+                        )
+                    ),
+                    
+                    // インフォメーション
+                    React.createElement('div', { className: 'info-box' },
+                        React.createElement('strong', null, '💡 使い方：'),
+                        React.createElement('br'),
+                        '• A4サイズに60mm×60mmの写真を最大12枚配置',
+                        React.createElement('br'),
+                        '• 写真をクリックしてスライダーで精密調整',
+                        React.createElement('br'),
+                        '• LocalStorageに保存されるので、ページを閉じても写真が残ります',
+                        React.createElement('br'),
+                        '• コンビニ印刷時は「用紙サイズに合わせる」を選択'
+                    ),
+                    
+                    // ファイル入力（隠し）
+                    React.createElement('input', {
+                        ref: fileInputRef,
+                        type: 'file',
+                        multiple: true,
+                        accept: 'image/*',
+                        onChange: handleFileUpload,
+                        className: 'hidden'
+                    })
+                ),
+                
+                // 写真編集エリア
+                selectedPhoto && React.createElement('div', { className: 'card editor' },
+                    React.createElement('h3', null, `写真編集 (${selectedPhotoIndex + 1}枚目)`),
+                    
+                    // プレビュー
+                    React.createElement('div', { className: 'preview-box' },
+                        React.createElement('div', { 
+                            className: 'preview',
+                            style: {
+                                backgroundImage: `url(${selectedPhoto.src})`,
+                                backgroundPosition: `${selectedPhoto.backgroundPositionX}% ${selectedPhoto.backgroundPositionY}%`,
+                                backgroundSize: selectedPhoto.backgroundSize,
+                                backgroundRepeat: 'no-repeat'
+                            }
+                        },
+                        React.createElement('div', { className: 'preview-label' }, 'プレビュー (60mm×60mm)')
+                        )
+                    ),
+                    
+                    // サイズ調整
+                    React.createElement('div', { className: 'control-group' },
+                        React.createElement('label', { className: 'control-label' }, 'サイズ調整'),
+                        React.createElement('div', { className: 'slider-group' },
+                            React.createElement('label', { className: 'slider-label' }, '拡大率'),
+                            React.createElement('input', {
+                                type: 'range',
+                                className: 'slider',
+                                min: 100,
+                                max: 400,
+                                step: 10,
+                                value: selectedPhoto.backgroundSize === 'cover' ? 100 : parseInt(selectedPhoto.backgroundSize),
+                                onChange: (e) => updatePhoto(selectedPhotoIndex, {
+                                    backgroundSize: e.target.value + '%'
+                                })
+                            }),
+                            React.createElement('div', { className: 'slider-values' },
+                                React.createElement('span', null, 'フィット'),
+                                React.createElement('span', null, selectedPhoto.backgroundSize === 'cover' ? '100%' : selectedPhoto.backgroundSize),
+                                React.createElement('span', null, '最大拡大')
+                            )
+                        ),
+                        React.createElement('button', 
+                            { 
+                                className: 'btn btn-gray',
+                                onClick: () => updatePhoto(selectedPhotoIndex, { backgroundSize: 'cover' })
+                            },
+                            '🔄 自動フィット'
+                        )
+                    ),
+                    
+                    // 位置調整
+                    React.createElement('div', { className: 'control-group' },
+                        React.createElement('label', { className: 'control-label' }, '位置調整'),
+                        React.createElement('div', { className: 'slider-group' },
+                            React.createElement('label', { className: 'slider-label' }, '左右の位置'),
+                            React.createElement('input', {
+                                type: 'range',
+                                className: 'slider',
+                                min: 0,
+                                max: 100,
+                                value: selectedPhoto.backgroundPositionX,
+                                onChange: (e) => updatePhoto(selectedPhotoIndex, {
+                                    backgroundPositionX: parseInt(e.target.value)
+                                })
+                            }),
+                            React.createElement('div', { className: 'slider-values' },
+                                React.createElement('span', null, '左'),
+                                React.createElement('span', null, `${selectedPhoto.backgroundPositionX}%`),
+                                React.createElement('span', null, '右')
+                            )
+                        ),
+                        React.createElement('div', { className: 'slider-group' },
+                            React.createElement('label', { className: 'slider-label' }, '上下の位置'),
+                            React.createElement('input', {
+                                type: 'range',
+                                className: 'slider',
+                                min: 0,
+                                max: 100,
+                                value: selectedPhoto.backgroundPositionY,
+                                onChange: (e) => updatePhoto(selectedPhotoIndex, {
+                                    backgroundPositionY: parseInt(e.target.value)
+                                })
+                            }),
+                            React.createElement('div', { className: 'slider-values' },
+                                React.createElement('span', null, '上'),
+                                React.createElement('span', null, `${selectedPhoto.backgroundPositionY}%`),
+                                React.createElement('span', null, '下')
+                            )
+                        ),
+                        
+                        // 微調整ボタン
+                        React.createElement('div', { className: 'micro-controls' },
+                            React.createElement('div', null),
+                            React.createElement('button', { 
+                                className: 'micro-btn',
+                                onClick: () => adjustPosition(selectedPhotoIndex, 'up')
+                            }, '↑'),
+                            React.createElement('div', null),
+                            React.createElement('button', { 
+                                className: 'micro-btn',
+                                onClick: () => adjustPosition(selectedPhotoIndex, 'left')
+                            }, '←'),
+                            React.createElement('div', { className: 'micro-center' }, '微調整'),
+                            React.createElement('button', { 
+                                className: 'micro-btn',
+                                onClick: () => adjustPosition(selectedPhotoIndex, 'right')
+                            }, '→'),
+                            React.createElement('div', null),
+                            React.createElement('button', { 
+                                className: 'micro-btn',
+                                onClick: () => adjustPosition(selectedPhotoIndex, 'down')
+                            }, '↓'),
+                            React.createElement('div', null)
+                        )
+                    ),
+                    
+                    // 削除ボタン
+                    React.createElement('button', 
+                        { 
+                            className: 'btn btn-red',
+                            onClick: () => removePhoto(selectedPhotoIndex)
+                        },
+                        '🗑️ この写真を削除'
+                    )
+                ),
+                
+                // 写真グリッド
+                React.createElement('div', { className: 'card' },
+                    React.createElement('h3', { style: { marginBottom: '1rem' } }, 'A4レイアウトプレビュー'),
+                    React.createElement('div', { className: 'photo-grid' },
+                        Array.from({ length: 12 }, (_, index) => {
+                            const photo = photos[index];
+                            return React.createElement('div',
+                                {
+                                    key: index,
+                                    className: `photo-slot ${photo ? 'has-photo' : ''} ${selectedPhotoIndex === index ? 'selected' : ''}`,
+                                    onClick: () => photo && setSelectedPhotoIndex(index)
+                                },
+                                photo ? React.createElement('div', {
+                                    className: 'photo-crop',
+                                    style: {
+                                        backgroundImage: `url(${photo.src})`,
+                                        backgroundPosition: `${photo.backgroundPositionX}% ${photo.backgroundPositionY}%`,
+                                        backgroundSize: photo.backgroundSize
+                                    }
+                                }) : React.createElement('div', { className: 'empty-placeholder' }, index + 1)
+                            );
+                        })
+                    )
+                )
+            );
+        };
+
+        ReactDOM.render(React.createElement(PhotoLayoutApp), document.getElementById('root'));
+    </script>
+</body>
+</html>
