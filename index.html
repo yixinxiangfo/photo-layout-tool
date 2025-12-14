@@ -105,6 +105,15 @@
             background-color: #d1d5db;
         }
         
+        .btn-purple {
+            background-color: #9333ea;
+            color: white;
+        }
+        
+        .btn-purple:hover:not(:disabled) {
+            background-color: #7e22ce;
+        }
+        
         .info-box {
             background-color: #fef3c7;
             border: 1px solid #f59e0b;
@@ -112,6 +121,41 @@
             padding: 1rem;
             margin-bottom: 1rem;
             font-size: 0.875rem;
+        }
+        
+        .page-navigation {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background-color: #eff6ff;
+            border-radius: 0.5rem;
+        }
+        
+        .page-info {
+            font-size: 0.875rem;
+            color: #1e40af;
+            font-weight: 600;
+        }
+        
+        .stats-row {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .stat-number {
+            font-weight: 600;
+            color: #1f2937;
         }
         
         .photo-grid {
@@ -307,6 +351,11 @@
             .button-row {
                 flex-direction: column;
             }
+            
+            .page-navigation {
+                flex-direction: column;
+                align-items: stretch;
+            }
         }
     </style>
 </head>
@@ -315,6 +364,8 @@
 
     <script type="text/babel">
         const { useState, useRef, useCallback, useEffect } = React;
+
+        const PHOTOS_PER_PAGE = 12;
 
         // LocalStorageからデータを読み込み
         const loadPhotosFromStorage = () => {
@@ -338,12 +389,24 @@
         const PhotoLayoutApp = () => {
             const [photos, setPhotos] = useState(loadPhotosFromStorage);
             const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
+            const [currentPageIndex, setCurrentPageIndex] = useState(0);
             const fileInputRef = useRef(null);
+
+            const totalPages = Math.max(1, Math.ceil(photos.length / PHOTOS_PER_PAGE));
+            const currentPagePhotos = photos.slice(
+                currentPageIndex * PHOTOS_PER_PAGE,
+                (currentPageIndex + 1) * PHOTOS_PER_PAGE
+            );
 
             // 写真が変更されるたびにLocalStorageに保存
             useEffect(() => {
                 savePhotosToStorage(photos);
             }, [photos]);
+
+            // ページが変わったら選択をクリア
+            useEffect(() => {
+                setSelectedPhotoIndex(null);
+            }, [currentPageIndex]);
 
             const handleFileUpload = useCallback((event) => {
                 const files = Array.from(event.target.files);
@@ -368,13 +431,15 @@
             }, []);
 
             const updatePhoto = (index, updates) => {
+                const globalIndex = currentPageIndex * PHOTOS_PER_PAGE + index;
                 setPhotos(prev => prev.map((photo, i) => 
-                    i === index ? { ...photo, ...updates } : photo
+                    i === globalIndex ? { ...photo, ...updates } : photo
                 ));
             };
 
             const removePhoto = (index) => {
-                setPhotos(prev => prev.filter((_, i) => i !== index));
+                const globalIndex = currentPageIndex * PHOTOS_PER_PAGE + index;
+                setPhotos(prev => prev.filter((_, i) => i !== globalIndex));
                 if (selectedPhotoIndex === index) {
                     setSelectedPhotoIndex(null);
                 }
@@ -390,13 +455,15 @@
                 if (confirmed) {
                     setPhotos([]);
                     setSelectedPhotoIndex(null);
+                    setCurrentPageIndex(0);
                     localStorage.removeItem('photoLayoutData');
                     alert('全ての写真をクリアしました。');
                 }
             };
 
             const adjustPosition = (index, direction, amount = 5) => {
-                const photo = photos[index];
+                const globalIndex = currentPageIndex * PHOTOS_PER_PAGE + index;
+                const photo = photos[globalIndex];
                 if (!photo) return;
                 
                 let newX = photo.backgroundPositionX;
@@ -423,13 +490,8 @@
                 });
             };
 
-            const generateJPEG = () => {
-                try {
-                    if (photos.length === 0) {
-                        alert('写真を追加してからダウンロードしてください。');
-                        return;
-                    }
-                    
+            const generatePageJPEG = (pagePhotos, pageNumber) => {
+                return new Promise((resolve) => {
                     // A4サイズ設定（300DPI）
                     const a4Width = 2480;
                     const a4Height = 3508;
@@ -446,29 +508,21 @@
                     ctx.fillStyle = 'white';
                     ctx.fillRect(0, 0, a4Width, a4Height);
                     
-                    let loadedCount = 0;
-                    let totalPhotos = Math.min(photos.length, 12);
-                    
-                    if (totalPhotos === 0) {
+                    if (pagePhotos.length === 0) {
                         canvas.toBlob(function(blob) {
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `photo-layout-${new Date().toISOString().slice(0,10)}.jpg`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                            alert('A4レイアウト画像をダウンロードしました！');
+                            resolve(blob);
                         }, 'image/jpeg', 0.9);
                         return;
                     }
+                    
+                    let loadedCount = 0;
+                    const totalPhotos = Math.min(pagePhotos.length, 12);
                     
                     // 写真を配置（3列4行）
                     for (let row = 0; row < 4; row++) {
                         for (let col = 0; col < 3; col++) {
                             const index = row * 3 + col;
-                            const photo = photos[index];
+                            const photo = pagePhotos[index];
                             
                             if (photo) {
                                 ((currentPhoto, currentRow, currentCol) => {
@@ -503,15 +557,7 @@
                                         loadedCount++;
                                         if (loadedCount === totalPhotos) {
                                             canvas.toBlob(function(blob) {
-                                                const url = URL.createObjectURL(blob);
-                                                const a = document.createElement('a');
-                                                a.href = url;
-                                                a.download = `photo-layout-${new Date().toISOString().slice(0,10)}.jpg`;
-                                                document.body.appendChild(a);
-                                                a.click();
-                                                document.body.removeChild(a);
-                                                URL.revokeObjectURL(url);
-                                                alert('A4レイアウト画像をダウンロードしました！\nコンビニで印刷する際は「用紙サイズに合わせる」を選択してください。');
+                                                resolve(blob);
                                             }, 'image/jpeg', 0.9);
                                         }
                                     };
@@ -519,15 +565,7 @@
                                         loadedCount++;
                                         if (loadedCount === totalPhotos) {
                                             canvas.toBlob(function(blob) {
-                                                const url = URL.createObjectURL(blob);
-                                                const a = document.createElement('a');
-                                                a.href = url;
-                                                a.download = `photo-layout-${new Date().toISOString().slice(0,10)}.jpg`;
-                                                document.body.appendChild(a);
-                                                a.click();
-                                                document.body.removeChild(a);
-                                                URL.revokeObjectURL(url);
-                                                alert('A4レイアウト画像をダウンロードしました！（一部の画像が読み込めませんでした）');
+                                                resolve(blob);
                                             }, 'image/jpeg', 0.9);
                                         }
                                     };
@@ -536,13 +574,67 @@
                             }
                         }
                     }
+                });
+            };
+
+            const downloadBlob = (blob, filename) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            const generateCurrentPageJPEG = async () => {
+                if (photos.length === 0) {
+                    alert('写真を追加してからダウンロードしてください。');
+                    return;
+                }
+                
+                const blob = await generatePageJPEG(currentPagePhotos, currentPageIndex + 1);
+                downloadBlob(blob, `photo-layout-page${currentPageIndex + 1}-${new Date().toISOString().slice(0,10)}.jpg`);
+                alert(`ページ${currentPageIndex + 1}をダウンロードしました！\nコンビニで印刷する際は「用紙サイズに合わせる」を選択してください。`);
+            };
+
+            const generateAllPagesJPEG = async () => {
+                if (photos.length === 0) {
+                    alert('写真を追加してからダウンロードしてください。');
+                    return;
+                }
+                
+                const confirmed = confirm(`全${totalPages}ページをダウンロードします。よろしいですか？`);
+                if (!confirmed) return;
+                
+                for (let i = 0; i < totalPages; i++) {
+                    const pagePhotos = photos.slice(i * PHOTOS_PER_PAGE, (i + 1) * PHOTOS_PER_PAGE);
+                    const blob = await generatePageJPEG(pagePhotos, i + 1);
+                    downloadBlob(blob, `photo-layout-page${i + 1}-${new Date().toISOString().slice(0,10)}.jpg`);
                     
-                } catch (error) {
-                    alert('エラーが発生しました: ' + error.message);
+                    // 次のダウンロードまで少し待つ
+                    if (i < totalPages - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+                
+                alert(`全${totalPages}ページのダウンロードが完了しました！`);
+            };
+
+            const goToPreviousPage = () => {
+                if (currentPageIndex > 0) {
+                    setCurrentPageIndex(currentPageIndex - 1);
                 }
             };
 
-            const selectedPhoto = selectedPhotoIndex !== null ? photos[selectedPhotoIndex] : null;
+            const goToNextPage = () => {
+                if (currentPageIndex < totalPages - 1) {
+                    setCurrentPageIndex(currentPageIndex + 1);
+                }
+            };
+
+            const selectedPhoto = selectedPhotoIndex !== null ? currentPagePhotos[selectedPhotoIndex] : null;
 
             return React.createElement('div', { className: 'container' },
                 // ヘッダーカード
@@ -550,6 +642,41 @@
                     React.createElement('div', { className: 'header' },
                         React.createElement('span', { style: { fontSize: '1.5rem' } }, '📸'),
                         React.createElement('h1', null, '写真スクエアトリミング・A4印刷レイアウトツール')
+                    ),
+                    
+                    // 統計情報
+                    photos.length > 0 && React.createElement('div', { className: 'stats-row' },
+                        React.createElement('div', { className: 'stat-item' },
+                            React.createElement('span', null, '📊 総写真数:'),
+                            React.createElement('span', { className: 'stat-number' }, `${photos.length}枚`)
+                        ),
+                        React.createElement('div', { className: 'stat-item' },
+                            React.createElement('span', null, '📄 総ページ数:'),
+                            React.createElement('span', { className: 'stat-number' }, `${totalPages}ページ`)
+                        )
+                    ),
+                    
+                    // ページナビゲーション
+                    photos.length > PHOTOS_PER_PAGE && React.createElement('div', { className: 'page-navigation' },
+                        React.createElement('button', 
+                            { 
+                                className: 'btn btn-blue',
+                                onClick: goToPreviousPage,
+                                disabled: currentPageIndex === 0
+                            },
+                            '← 前のページ'
+                        ),
+                        React.createElement('div', { className: 'page-info' },
+                            `ページ ${currentPageIndex + 1} / ${totalPages}`
+                        ),
+                        React.createElement('button', 
+                            { 
+                                className: 'btn btn-blue',
+                                onClick: goToNextPage,
+                                disabled: currentPageIndex === totalPages - 1
+                            },
+                            '次のページ →'
+                        )
                     ),
                     
                     // ボタン行
@@ -574,11 +701,20 @@
                         React.createElement('button', 
                             { 
                                 className: 'btn btn-green',
-                                onClick: generateJPEG,
+                                onClick: generateCurrentPageJPEG,
                                 disabled: photos.length === 0
                             },
                             React.createElement('span', { className: 'icon' }, '💾'),
-                            'A4高解像度JPEG生成'
+                            `ページ${currentPageIndex + 1}をダウンロード`
+                        ),
+                        totalPages > 1 && React.createElement('button', 
+                            { 
+                                className: 'btn btn-purple',
+                                onClick: generateAllPagesJPEG,
+                                disabled: photos.length === 0
+                            },
+                            React.createElement('span', { className: 'icon' }, '📥'),
+                            `全${totalPages}ページ一括ダウンロード`
                         )
                     ),
                     
@@ -587,6 +723,8 @@
                         React.createElement('strong', null, '💡 使い方：'),
                         React.createElement('br'),
                         '• A4サイズに60mm×60mmの写真を最大12枚配置',
+                        React.createElement('br'),
+                        '• 12枚以上選択すると自動的に複数ページに分割されます',
                         React.createElement('br'),
                         '• 写真をクリックしてスライダーで精密調整',
                         React.createElement('br'),
@@ -608,7 +746,7 @@
                 
                 // 写真編集エリア
                 selectedPhoto && React.createElement('div', { className: 'card editor' },
-                    React.createElement('h3', null, `写真編集 (${selectedPhotoIndex + 1}枚目)`),
+                    React.createElement('h3', null, `写真編集 (ページ${currentPageIndex + 1} - ${selectedPhotoIndex + 1}枚目)`),
                     
                     // プレビュー
                     React.createElement('div', { className: 'preview-box' },
@@ -734,10 +872,12 @@
                 
                 // 写真グリッド
                 React.createElement('div', { className: 'card' },
-                    React.createElement('h3', { style: { marginBottom: '1rem' } }, 'A4レイアウトプレビュー'),
+                    React.createElement('h3', { style: { marginBottom: '1rem' } }, 
+                        `A4レイアウトプレビュー - ページ${currentPageIndex + 1}/${totalPages}`
+                    ),
                     React.createElement('div', { className: 'photo-grid' },
                         Array.from({ length: 12 }, (_, index) => {
-                            const photo = photos[index];
+                            const photo = currentPagePhotos[index];
                             return React.createElement('div',
                                 {
                                     key: index,
