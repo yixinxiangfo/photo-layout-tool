@@ -384,8 +384,30 @@
                 localStorage.setItem('photoLayoutData', JSON.stringify(photos));
             } catch (e) {
                 console.warn('写真データの保存に失敗しました:', e);
+                alert('写真データの保存に失敗しました（ブラウザの保存容量の上限に達した可能性があります）。ページをダウンロードしてから「全クリア」で写真を減らしてください。');
             }
         };
+
+        // LocalStorageの容量を圧迫しないよう、長辺2000pxまで縮小する
+        // （印刷に使う709px出力に対して十分な余裕を残しつつ、Androidの元解像度そのままの
+        //   保存によるlocalStorageの容量オーバーを防ぐ）
+        const resizeImageDataUrl = (dataUrl, maxDim) => new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > maxDim || height > maxDim) {
+                    const scale = maxDim / Math.max(width, height);
+                    width = Math.round(width * scale);
+                    height = Math.round(height * scale);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.88));
+            };
+            img.src = dataUrl;
+        });
 
         // 画像を指定角度（90/180/270）回転させ、新しいdataURLを返す
         const rotateImageDataUrl = (src, degrees) => {
@@ -498,9 +520,10 @@
                 if (!imgRes.ok) continue;
                 const blob = await imgRes.blob();
                 const dataUrl = await blobToDataUrl(blob);
+                const resizedSrc = await resizeImageDataUrl(dataUrl, 2000);
                 newPhotos.push({
                     id: Date.now() + Math.random(),
-                    src: dataUrl,
+                    src: resizedSrc,
                     backgroundPositionX: 50,
                     backgroundPositionY: 50,
                     backgroundSize: 'cover'
@@ -547,15 +570,16 @@
                 files.forEach(file => {
                     if (file.type.startsWith('image/')) {
                         const reader = new FileReader();
-                        reader.onload = (e) => {
+                        reader.onload = async (e) => {
+                            const resizedSrc = await resizeImageDataUrl(e.target.result, 2000);
                             const newPhoto = {
                                 id: Date.now() + Math.random(),
-                                src: e.target.result,
+                                src: resizedSrc,
                                 backgroundPositionX: 50,
                                 backgroundPositionY: 50,
                                 backgroundSize: 'cover'
                             };
-                            
+
                             setPhotos(prev => [...prev, newPhoto]);
                         };
                         reader.readAsDataURL(file);
