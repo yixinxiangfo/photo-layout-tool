@@ -7,6 +7,7 @@
     <script crossorigin src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         * {
             margin: 0;
@@ -406,11 +407,123 @@
             });
         };
 
+        // Googleフォト連携（Photos Picker API）
+        const GOOGLE_CLIENT_ID = '1000951261592-jacn8l2lejvke61ts54fqi4na5qhahdr.apps.googleusercontent.com';
+        const GOOGLE_PHOTOS_SCOPE = 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly';
+        const PHOTOS_PICKER_API = 'https://photospicker.googleapis.com/v1';
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        const parseDurationToMs = (duration, fallbackMs) => {
+            if (!duration) return fallbackMs;
+            const seconds = parseFloat(duration);
+            return Number.isFinite(seconds) ? seconds * 1000 : fallbackMs;
+        };
+
+        const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+
+        // Googleフォトのピッカーでユーザーに写真を選んでもらい、画像データを取得する
+        const importFromGooglePhotos = async (accessToken, popupWindow, onStatus) => {
+            onStatus('セッションを作成中...');
+            const sessionRes = await fetch(`${PHOTOS_PICKER_API}/sessions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            });
+            if (!sessionRes.ok) {
+                throw new Error('セッションの作成に失敗しました。');
+            }
+            let session = await sessionRes.json();
+
+            if (popupWindow && !popupWindow.closed) {
+                popupWindow.location.href = session.pickerUri;
+            } else {
+                window.open(session.pickerUri, '_blank');
+            }
+
+            onStatus('開いた画面から写真を選んでください...');
+
+            const pollIntervalMs = parseDurationToMs(session.pollingConfig && session.pollingConfig.pollInterval, 3000);
+            const deadline = Date.now() + 10 * 60 * 1000; // 10分でタイムアウト
+
+            while (!session.mediaItemsSet) {
+                if (Date.now() > deadline) {
+                    throw new Error('選択がタイムアウトしました。もう一度お試しください。');
+                }
+                await sleep(pollIntervalMs);
+                const pollRes = await fetch(`${PHOTOS_PICKER_API}/sessions/${session.id}`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!pollRes.ok) {
+                    throw new Error('選択状況の確認に失敗しました。');
+                }
+                session = await pollRes.json();
+            }
+
+            onStatus('選んだ写真を取得中...');
+
+            let mediaItems = [];
+            let pageToken = '';
+            do {
+                const url = new URL(`${PHOTOS_PICKER_API}/mediaItems`);
+                url.searchParams.set('sessionId', session.id);
+                if (pageToken) url.searchParams.set('pageToken', pageToken);
+                const listRes = await fetch(url.toString(), {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!listRes.ok) {
+                    throw new Error('写真一覧の取得に失敗しました。');
+                }
+                const listJson = await listRes.json();
+                mediaItems = mediaItems.concat(listJson.mediaItems || []);
+                pageToken = listJson.nextPageToken || '';
+            } while (pageToken);
+
+            const newPhotos = [];
+            for (let i = 0; i < mediaItems.length; i++) {
+                const item = mediaItems[i];
+                const baseUrl = item.mediaFile && item.mediaFile.baseUrl;
+                if (!baseUrl) continue;
+                onStatus(`写真を読み込み中 (${i + 1}/${mediaItems.length})...`);
+                const imgRes = await fetch(`${baseUrl}=d`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                if (!imgRes.ok) continue;
+                const blob = await imgRes.blob();
+                const dataUrl = await blobToDataUrl(blob);
+                newPhotos.push({
+                    id: Date.now() + Math.random(),
+                    src: dataUrl,
+                    backgroundPositionX: 50,
+                    backgroundPositionY: 50,
+                    backgroundSize: 'cover'
+                });
+            }
+
+            fetch(`${PHOTOS_PICKER_API}/sessions/${session.id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            }).catch(() => {});
+
+            return newPhotos;
+        };
+
         const PhotoLayoutApp = () => {
             const [photos, setPhotos] = useState(loadPhotosFromStorage);
             const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
             const [currentPageIndex, setCurrentPageIndex] = useState(0);
+            const [googlePhotosStatus, setGooglePhotosStatus] = useState(null);
             const fileInputRef = useRef(null);
+            const tokenClientRef = useRef(null);
+            const pendingImportRef = useRef(null);
 
             const totalPages = Math.max(1, Math.ceil(photos.length / PHOTOS_PER_PAGE));
             const currentPagePhotos = photos.slice(
@@ -449,6 +562,59 @@
                     }
                 });
             }, []);
+
+            const handleGooglePhotosImport = () => {
+                if (googlePhotosStatus) return;
+
+                if (typeof google === 'undefined' || !google.accounts) {
+                    alert('Google連携の読み込みが完了していません。少し待ってからもう一度お試しください。');
+                    return;
+                }
+
+                const popupWindow = window.open('about:blank', '_blank', 'width=480,height=720');
+                if (!popupWindow) {
+                    alert('ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップを許可してください。');
+                    return;
+                }
+
+                const runImport = async (accessToken) => {
+                    try {
+                        setGooglePhotosStatus('準備中...');
+                        const newPhotos = await importFromGooglePhotos(accessToken, popupWindow, setGooglePhotosStatus);
+                        if (newPhotos.length === 0) {
+                            alert('写真が選択されませんでした。');
+                        } else {
+                            setPhotos(prev => [...prev, ...newPhotos]);
+                            alert(`${newPhotos.length}枚の写真を追加しました。`);
+                        }
+                    } catch (err) {
+                        alert('Googleフォトからの読み込みに失敗しました: ' + err.message);
+                    } finally {
+                        setGooglePhotosStatus(null);
+                    }
+                };
+
+                if (!tokenClientRef.current) {
+                    tokenClientRef.current = google.accounts.oauth2.initTokenClient({
+                        client_id: GOOGLE_CLIENT_ID,
+                        scope: GOOGLE_PHOTOS_SCOPE,
+                        callback: (response) => {
+                            const pending = pendingImportRef.current;
+                            pendingImportRef.current = null;
+                            if (!pending) return;
+                            if (response.error) {
+                                pending.popupWindow.close();
+                                alert('Googleへのログインに失敗しました: ' + response.error);
+                                setGooglePhotosStatus(null);
+                                return;
+                            }
+                            pending.runImport(response.access_token);
+                        }
+                    });
+                }
+                pendingImportRef.current = { popupWindow, runImport };
+                tokenClientRef.current.requestAccessToken();
+            };
 
             const updatePhoto = (index, updates) => {
                 const globalIndex = currentPageIndex * PHOTOS_PER_PAGE + index;
@@ -723,8 +889,17 @@
                             React.createElement('span', { className: 'icon' }, '📁'),
                             '写真を追加'
                         ),
-                        React.createElement('button', 
-                            { 
+                        React.createElement('button',
+                            {
+                                className: 'btn btn-purple',
+                                onClick: handleGooglePhotosImport,
+                                disabled: !!googlePhotosStatus
+                            },
+                            React.createElement('span', { className: 'icon' }, '🖼️'),
+                            googlePhotosStatus || 'Googleフォトから選ぶ'
+                        ),
+                        React.createElement('button',
+                            {
                                 className: 'btn btn-red',
                                 onClick: clearAllPhotos,
                                 disabled: photos.length === 0
