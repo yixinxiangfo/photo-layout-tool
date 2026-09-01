@@ -520,6 +520,7 @@
             const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
             const [currentPageIndex, setCurrentPageIndex] = useState(0);
             const [googlePhotosStatus, setGooglePhotosStatus] = useState(null);
+            const [isRotatingAll, setIsRotatingAll] = useState(false);
             const fileInputRef = useRef(null);
             const tokenClientRef = useRef(null);
             const pendingImportRef = useRef(null);
@@ -636,6 +637,32 @@
                     setCurrentPageIndex(0);
                     localStorage.removeItem('photoLayoutData');
                     alert('全ての写真をクリアしました。');
+                }
+            };
+
+            const rotateAllPhotosLeft = async () => {
+                if (photos.length === 0) {
+                    alert('回転する写真がありません。');
+                    return;
+                }
+                const confirmed = confirm(`現在の全${photos.length}枚を左に90°回転します。よろしいですか？`);
+                if (!confirmed) return;
+
+                setIsRotatingAll(true);
+                try {
+                    const rotated = await Promise.all(photos.map(async (photo) => {
+                        const rotatedSrc = await rotateImageDataUrl(photo.src, 270);
+                        return {
+                            ...photo,
+                            src: rotatedSrc,
+                            backgroundPositionX: 50,
+                            backgroundPositionY: 50,
+                            backgroundSize: 'cover'
+                        };
+                    }));
+                    setPhotos(rotated);
+                } finally {
+                    setIsRotatingAll(false);
                 }
             };
 
@@ -889,6 +916,15 @@
                             },
                             React.createElement('span', { className: 'icon' }, '🖼️'),
                             googlePhotosStatus || 'Googleフォトから選ぶ'
+                        ),
+                        React.createElement('button',
+                            {
+                                className: 'btn btn-gray',
+                                onClick: rotateAllPhotosLeft,
+                                disabled: photos.length === 0 || isRotatingAll
+                            },
+                            React.createElement('span', { className: 'icon' }, '↺'),
+                            isRotatingAll ? '回転中...' : '全て左に90°回転'
                         ),
                         React.createElement('button',
                             {
