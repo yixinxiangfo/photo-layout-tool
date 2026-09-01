@@ -197,6 +197,16 @@
             background-repeat: no-repeat;
         }
         
+        .photo-select-checkbox {
+            position: absolute;
+            top: 0.35rem;
+            left: 0.35rem;
+            width: 1.15rem;
+            height: 1.15rem;
+            z-index: 2;
+            cursor: pointer;
+        }
+
         .empty-placeholder {
             position: absolute;
             top: 50%;
@@ -585,6 +595,7 @@
             const [currentPageIndex, setCurrentPageIndex] = useState(0);
             const [googlePhotosStatus, setGooglePhotosStatus] = useState(null);
             const [isRotatingAll, setIsRotatingAll] = useState(false);
+            const [selectedForRotation, setSelectedForRotation] = useState(() => new Set());
             const fileInputRef = useRef(null);
             const tokenClientRef = useRef(null);
             const pendingImportRef = useRef(null);
@@ -713,17 +724,36 @@
                 }
             };
 
-            const rotateAllPhotosLeft = async () => {
-                if (photos.length === 0) {
-                    alert('回転する写真がありません。');
+            const toggleSelectForRotation = (id) => {
+                setSelectedForRotation(prev => {
+                    const next = new Set(prev);
+                    if (next.has(id)) {
+                        next.delete(id);
+                    } else {
+                        next.add(id);
+                    }
+                    return next;
+                });
+            };
+
+            const toggleSelectAllForRotation = () => {
+                setSelectedForRotation(prev =>
+                    prev.size === photos.length ? new Set() : new Set(photos.map(p => p.id))
+                );
+            };
+
+            const rotateSelectedPhotosLeft = async () => {
+                if (selectedForRotation.size === 0) {
+                    alert('回転したい写真の左上のチェックボックスにチェックを入れてください。');
                     return;
                 }
-                const confirmed = confirm(`現在の全${photos.length}枚を左に90°回転します。よろしいですか？`);
+                const confirmed = confirm(`選択した${selectedForRotation.size}枚を左に90°回転します。よろしいですか？`);
                 if (!confirmed) return;
 
                 setIsRotatingAll(true);
                 try {
                     const rotated = await Promise.all(photos.map(async (photo) => {
+                        if (!selectedForRotation.has(photo.id)) return photo;
                         const rotatedSrc = await rotateImageDataUrl(photo.src, 270);
                         return {
                             ...photo,
@@ -734,6 +764,7 @@
                         };
                     }));
                     setPhotos(rotated);
+                    setSelectedForRotation(new Set());
                 } finally {
                     setIsRotatingAll(false);
                 }
@@ -993,11 +1024,11 @@
                         React.createElement('button',
                             {
                                 className: 'btn btn-gray',
-                                onClick: rotateAllPhotosLeft,
-                                disabled: photos.length === 0 || isRotatingAll
+                                onClick: rotateSelectedPhotosLeft,
+                                disabled: selectedForRotation.size === 0 || isRotatingAll
                             },
                             React.createElement('span', { className: 'icon' }, '↺'),
-                            isRotatingAll ? '回転中...' : '全て左に90°回転'
+                            isRotatingAll ? '回転中...' : `選択した${selectedForRotation.size > 0 ? selectedForRotation.size + '枚' : ''}写真を左に90°回転`
                         ),
                         React.createElement('button',
                             {
@@ -1201,8 +1232,15 @@
                 
                 // 写真グリッド
                 React.createElement('div', { className: 'card' },
-                    React.createElement('h3', { style: { marginBottom: '1rem' } }, 
-                        `A4レイアウトプレビュー - ページ${currentPageIndex + 1}/${totalPages}`
+                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' } },
+                        React.createElement('h3', null,
+                            `A4レイアウトプレビュー - ページ${currentPageIndex + 1}/${totalPages}`
+                        ),
+                        photos.length > 0 && React.createElement('button', {
+                            className: 'btn btn-gray',
+                            style: { fontSize: '0.75rem', padding: '0.35rem 0.75rem' },
+                            onClick: toggleSelectAllForRotation
+                        }, selectedForRotation.size === photos.length ? '全解除' : `全選択（全${photos.length}枚）`)
                     ),
                     React.createElement('div', { className: 'photo-grid' },
                         Array.from({ length: 12 }, (_, index) => {
@@ -1213,14 +1251,23 @@
                                     className: `photo-slot ${photo ? 'has-photo' : ''} ${selectedPhotoIndex === index ? 'selected' : ''}`,
                                     onClick: () => photo && setSelectedPhotoIndex(index)
                                 },
+                                photo && React.createElement('input', {
+                                    key: 'checkbox',
+                                    type: 'checkbox',
+                                    className: 'photo-select-checkbox',
+                                    checked: selectedForRotation.has(photo.id),
+                                    onClick: (e) => e.stopPropagation(),
+                                    onChange: () => toggleSelectForRotation(photo.id)
+                                }),
                                 photo ? React.createElement('div', {
+                                    key: 'crop',
                                     className: 'photo-crop',
                                     style: {
                                         backgroundImage: `url(${photo.src})`,
                                         backgroundPosition: `${photo.backgroundPositionX}% ${photo.backgroundPositionY}%`,
                                         backgroundSize: photo.backgroundSize
                                     }
-                                }) : React.createElement('div', { className: 'empty-placeholder' }, index + 1)
+                                }) : React.createElement('div', { key: 'placeholder', className: 'empty-placeholder' }, index + 1)
                             );
                         })
                     )
